@@ -1,7 +1,7 @@
 # minecraft-rl
 
 A reinforcement learning framework for Minecraft-style combat, built for
-research. Today it does 1.21.8-era sword duels; the architecture is designed
+research. Today it does 1.9+ sword duels; the architecture is designed
 to grow into other Minecraft-like tasks.
 
 It consists of a headless C++ reimplementation of the relevant combat
@@ -10,7 +10,7 @@ PPO self-play trainer built on LibTorch, and viewers to inspect what the
 policies learn.
 
 Everything in the training loop is C++: there is no Python in the hot path,
-and no game client involved anywhere. The simulator reproduces 1.21.8-style
+and no game client involved anywhere. The simulator reproduces 1.9+ style
 movement, attack-cooldown, knockback, sprint-reset and hit-detection rules
 closely enough that the learned behavior is meaningful, at hundreds of
 millions of steps per hour on one machine.
