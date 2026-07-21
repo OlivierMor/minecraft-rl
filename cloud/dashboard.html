@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mc-pvp-rl training dashboard</title>
+<style>
+  :root {
+    --surface-1: #fcfcfb; --page: #f9f9f7;
+    --text-1: #0b0b0b; --text-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --up-good: #006300; --down-bad: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface-1: #1a1a19; --page: #0d0d0d;
+      --text-1: #ffffff; --text-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --baseline: #383835;
+      --border: rgba(255,255,255,0.10);
+      --up-good: #0ca30c; --down-bad: #e66767;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--page); color: var(--text-1);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 20px; max-width: 1400px; margin: 0 auto;
+  }
+  h1 { font-size: 18px; font-weight: 600; }
+  .sub { color: var(--text-2); font-size: 13px; margin-top: 2px; }
+  .filters { display: flex; gap: 8px; align-items: center; margin: 16px 0; flex-wrap: wrap; }
+  .filters select, .filters button {
+    font: inherit; font-size: 13px; color: var(--text-1);
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 8px; padding: 5px 10px; cursor: pointer;
+  }
+  .filters button[aria-pressed="true"] { border-color: var(--text-2); font-weight: 600; }
+  .filters .spacer { flex: 1; }
+  .filters .stamp { color: var(--muted); font-size: 12px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .tile {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 14px;
+  }
+  .tile .label { color: var(--text-2); font-size: 12px; }
+  .tile .value { font-size: 26px; font-weight: 600; margin-top: 2px; }
+  .tile.hero .value { font-size: 48px; }
+  .tile .delta { font-size: 12px; margin-top: 2px; color: var(--text-2); }
+  .tile .delta.up { color: var(--up-good); }
+  .tile .delta.down { color: var(--down-bad); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 12px; margin-top: 12px; }
+  .grid.small { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 14px; position: relative;
+  }
+  .card h2 { font-size: 13px; font-weight: 600; }
+  .card .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 4px; }
+  .card .legend span { color: var(--text-2); font-size: 12px; display: inline-flex; align-items: center; gap: 5px; }
+  .card .legend i { display: inline-block; width: 14px; height: 2px; border-radius: 1px; }
+  .card svg { display: block; width: 100%; margin-top: 6px; }
+  .card.stale { opacity: 0.6; }
+  .tooltip {
+    position: absolute; pointer-events: none; display: none; z-index: 5;
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: 12px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.15); min-width: 130px;
+  }
+  .tooltip .tx { color: var(--muted); margin-bottom: 4px; }
+  .tooltip .row { display: flex; align-items: center; gap: 6px; }
+  .tooltip .row i { width: 10px; height: 2px; border-radius: 1px; flex: none; }
+  .tooltip .row b { margin-left: auto; font-weight: 600; padding-left: 10px; }
+  .tooltip .row span { color: var(--text-2); }
+  .empty { color: var(--muted); padding: 30px 0 20px; text-align: center; font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>sword-bot training</h1>
+<div class="sub" id="runline">loading…</div>
+
+<div class="filters">
+  <select id="runsel" aria-label="run"></select>
+  <button data-range="0" aria-pressed="true">All</button>
+  <button data-range="2000">Last 2000</button>
+  <button data-range="500">Last 500</button>
+  <div class="spacer"></div>
+  <span class="stamp" id="stamp"></span>
+</div>
+
+<div class="tiles" id="tiles"></div>
+<div class="grid" id="big"></div>
+<div class="grid small" id="small"></div>
+
+<script>
+"use strict";
+const LIGHT = ["#2a78d6","#1baf7a","#eda100","#008300","#4a3aa7","#e34948","#e87ba4","#eb6834"];
+const DARK  = ["#3987e5","#199e70","#c98500","#008300","#9085e9","#e66767","#d55181","#d95926"];
+const isDark = () => matchMedia("(prefers-color-scheme: dark)").matches;
+const slot = i => (isDark() ? DARK : LIGHT)[i % 8];
+
+const qs = new URLSearchParams(location.search);
+let run = qs.get("run") || "";
+let range = 0;
+let table = null;
+let firstLoad = true;
+
+const fmt = (v, compact) => {
+  if (v == null || !isFinite(v)) return "–";
+  if (compact) {
+    const a = Math.abs(v);
+    if (a >= 1e9) return (v/1e9).toFixed(1) + "B";
+    if (a >= 1e6) return (v/1e6).toFixed(1) + "M";
+    if (a >= 1e3) return (v/1e3).toFixed(1) + "K";
+  }
+  const a = Math.abs(v);
+  if (a >= 1000) return Math.round(v).toLocaleString("en-US");
+  if (a >= 10) return v.toFixed(1).replace(/\.0$/, "");
+  if (a >= 0.01 || v === 0) return +v.toFixed(3) + "";
+  return v.toExponential(1);
+};
+
+function parseCsv(text) {
+  const lines = text.trim().split("\n");
+  if (lines.length < 2) return null;
+  const cols = lines[0].split(",");
+  const rows = [];
+  for (let i = 1; i < lines.length; ++i) {
+    const parts = lines[i].split(",");
+    if (parts.length !== cols.length) continue;
+    rows.push(parts.map(Number));
+  }
+  return rows.length ? { cols, rows } : null;
+}
+
+function col(name) {
+  const i = table.cols.indexOf(name);
+  if (i < 0) return null;
+  return table.view.map(r => r[i]);
+}
+
+function bucket(xs, ys, n) {
+  if (xs.length <= n) return { xs, ys };
+  const bx = [], by = [], step = xs.length / n;
+  for (let b = 0; b < n; ++b) {
+    const s = Math.floor(b * step), e = Math.max(s + 1, Math.floor((b + 1) * step));
+    let sum = 0, cnt = 0;
+    for (let i = s; i < e; ++i) if (isFinite(ys[i])) { sum += ys[i]; ++cnt; }
+    bx.push(xs[Math.floor((s + e - 1) / 2)]);
+    by.push(cnt ? sum / cnt : NaN);
+  }
+  return { xs: bx, ys: by };
+}
+
+function niceTicks(lo, hi, n) {
+  if (!(hi > lo)) { hi = lo + 1; }
+  const span = hi - lo, raw = span / n;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => span / s <= n) || mag * 10;
+  const t = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) t.push(v);
+  return t;
+}
+
+const svgNS = "http://www.w3.org/2000/svg";
+const el = (tag, attrs) => {
+  const e = document.createElementNS(svgNS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+};
+
+function chart(parent, title, series, opts = {}) {
+  const card = document.createElement("div");
+  card.className = "card";
+  const h = document.createElement("h2");
+  h.textContent = title;
+  card.appendChild(h);
+  if (series.length > 1) {
+    const leg = document.createElement("div");
+    leg.className = "legend";
+    for (const s of series) {
+      const item = document.createElement("span");
+      const key = document.createElement("i");
+      key.style.background = slot(s.slot);
+      item.appendChild(key);
+      item.appendChild(document.createTextNode(s.name));
+      leg.appendChild(item);
+    }
+    card.appendChild(leg);
+  }
+  parent.appendChild(card);
+
+  const xsAll = col("update");
+  const data = series
+    .map(s => ({ ...s, raw: col(s.col) }))
+    .filter(s => s.raw);
+  if (!xsAll || xsAll.length < 2 || !data.length) {
+    const d = document.createElement("div");
+    d.className = "empty";
+    d.textContent = "waiting for data…";
+    card.appendChild(d);
+    return;
+  }
+  for (const s of data) {
+    const b = bucket(xsAll, s.raw, 500);
+    s.xs = b.xs; s.ys = b.ys;
+  }
+  const xs = data[0].xs;
+
+  const W = Math.max(280, card.clientWidth - 28), H = opts.h || 190;
+  const m = { l: 46, r: 12, t: 8, b: 22 };
+  const x0 = xs[0], x1 = xs[xs.length - 1];
+  let lo = Infinity, hi = -Infinity;
+  for (const s of data) for (const v of s.ys) if (isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  if (opts.y01) { lo = 0; hi = 1; }
+  if (!(hi > lo)) { hi = lo + 1; lo = lo - 1; }
+  const pad = opts.y01 ? 0 : (hi - lo) * 0.08;
+  lo -= pad; hi += pad;
+  const X = v => m.l + (v - x0) / (x1 - x0 || 1) * (W - m.l - m.r);
+  const Y = v => m.t + (hi - v) / (hi - lo) * (H - m.t - m.b);
+
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "img" });
+  card.appendChild(svg);
+
+  for (const t of niceTicks(lo, hi, 4)) {
+    svg.appendChild(el("line", { x1: m.l, x2: W - m.r, y1: Y(t), y2: Y(t), stroke: "var(--grid)", "stroke-width": 1 }));
+    const txt = el("text", { x: m.l - 6, y: Y(t) + 3.5, "text-anchor": "end", "font-size": 10, fill: "var(--muted)" });
+    txt.textContent = fmt(t, true);
+    svg.appendChild(txt);
+  }
+  svg.appendChild(el("line", { x1: m.l, x2: W - m.r, y1: H - m.b, y2: H - m.b, stroke: "var(--baseline)", "stroke-width": 1 }));
+  for (const t of niceTicks(x0, x1, 5)) {
+    if (t < x0 || t > x1) continue;
+    const txt = el("text", { x: X(t), y: H - 7, "text-anchor": "middle", "font-size": 10, fill: "var(--muted)" });
+    txt.textContent = fmt(t, true);
+    svg.appendChild(txt);
+  }
+
+  for (const s of data) {
+    let d = "", pen = false;
+    for (let i = 0; i < xs.length; ++i) {
+      const v = s.ys[i];
+      if (!isFinite(v)) { pen = false; continue; }
+      d += (pen ? "L" : "M") + X(xs[i]).toFixed(1) + " " + Y(v).toFixed(1);
+      pen = true;
+    }
+    svg.appendChild(el("path", { d, fill: "none", stroke: slot(s.slot), "stroke-width": 2,
+                                 "stroke-linejoin": "round", "stroke-linecap": "round" }));
+    const lastI = s.ys.length - 1;
+    if (isFinite(s.ys[lastI])) {
+      svg.appendChild(el("circle", { cx: X(xs[lastI]), cy: Y(s.ys[lastI]), r: 5, fill: "var(--surface-1)" }));
+      svg.appendChild(el("circle", { cx: X(xs[lastI]), cy: Y(s.ys[lastI]), r: 4, fill: slot(s.slot) }));
+    }
+  }
+
+  const hair = el("line", { y1: m.t, y2: H - m.b, stroke: "var(--baseline)", "stroke-width": 1, visibility: "hidden" });
+  svg.appendChild(hair);
+  const tip = document.createElement("div");
+  tip.className = "tooltip";
+  card.appendChild(tip);
+  svg.addEventListener("pointermove", ev => {
+    const r = svg.getBoundingClientRect();
+    const px = (ev.clientX - r.left) * (W / r.width);
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < xs.length; ++i) {
+      const d2 = Math.abs(X(xs[i]) - px);
+      if (d2 < bd) { bd = d2; best = i; }
+    }
+    hair.setAttribute("x1", X(xs[best]));
+    hair.setAttribute("x2", X(xs[best]));
+    hair.setAttribute("visibility", "visible");
+    tip.replaceChildren();
+    const tx = document.createElement("div");
+    tx.className = "tx";
+    tx.textContent = "update " + fmt(xs[best]);
+    tip.appendChild(tx);
+    for (const s of data) {
+      const row = document.createElement("div");
+      row.className = "row";
+      const key = document.createElement("i");
+      key.style.background = slot(s.slot);
+      const name = document.createElement("span");
+      name.textContent = s.name;
+      const val = document.createElement("b");
+      val.textContent = fmt(s.ys[best], opts.compact);
+      row.append(key, name, val);
+      tip.appendChild(row);
+    }
+    tip.style.display = "block";
+    const cardR = card.getBoundingClientRect();
+    let left = ev.clientX - cardR.left + 14;
+    if (left + tip.offsetWidth > cardR.width - 8) left = ev.clientX - cardR.left - tip.offsetWidth - 14;
+    tip.style.left = left + "px";
+    tip.style.top = Math.max(4, ev.clientY - cardR.top - tip.offsetHeight / 2) + "px";
+  });
+  svg.addEventListener("pointerleave", () => {
+    tip.style.display = "none";
+    hair.setAttribute("visibility", "hidden");
+  });
+}
+
+function tile(parent, label, value, opts = {}) {
+  const t = document.createElement("div");
+  t.className = "tile" + (opts.hero ? " hero" : "");
+  const l = document.createElement("div");
+  l.className = "label";
+  l.textContent = label;
+  const v = document.createElement("div");
+  v.className = "value";
+  v.textContent = value;
+  t.append(l, v);
+  if (opts.delta != null && isFinite(opts.delta)) {
+    const d = document.createElement("div");
+    d.className = "delta " + (opts.delta > 0 ? "up" : opts.delta < 0 ? "down" : "");
+    d.textContent = (opts.delta > 0 ? "▲ +" : opts.delta < 0 ? "▼ " : "") + fmt(opts.delta) + " " + (opts.deltaLabel || "");
+    t.appendChild(d);
+  }
+  parent.appendChild(t);
+}
+
+function render() {
+  const tiles = document.getElementById("tiles");
+  const big = document.getElementById("big");
+  const small = document.getElementById("small");
+  tiles.replaceChildren(); big.replaceChildren(); small.replaceChildren();
+  if (!table) return;
+
+  const all = table.rows;
+  table.view = range > 0 ? all.slice(-range) : all;
+  const last = v => { const c = col(v); return c ? c[c.length - 1] : null; };
+  const back = (v, n) => { const c = col(v); return c && c.length > n ? c[c.length - 1 - n] : null; };
+
+  const lookback = Math.min(200, Math.max(1, table.view.length - 1));
+  const eloNow = last("elo"), eloThen = back("elo", lookback);
+  tile(tiles, "Elo (bot = 1000)", fmt(eloNow), {
+    hero: true,
+    delta: eloThen != null ? eloNow - eloThen : null,
+    deltaLabel: "vs " + lookback + " updates ago",
+  });
+  tile(tiles, "Win rate vs bot (train)", fmt(last("win_vs_bot_train")));
+  tile(tiles, "Win rate vs pool (train)", fmt(last("win_vs_pool_train")));
+  tile(tiles, "Max combo / ep", fmt(last("ep_maxcombo")));
+  tile(tiles, "Crits / ep", fmt(last("ep_crits")));
+  tile(tiles, "Agent steps", fmt(last("env_steps"), true));
+  tile(tiles, "Steps / s", fmt(last("sps"), true));
+  tile(tiles, "Opponent pool", fmt(last("pool_size")));
+
+  chart(big, "Elo over training", [{ name: "elo", col: "elo", slot: 0 }]);
+  chart(big, "Training win rates (EMA)", [
+    { name: "vs SimpleBot", col: "win_vs_bot_train", slot: 0 },
+    { name: "vs pool", col: "win_vs_pool_train", slot: 1 },
+  ], { y01: true });
+  const rewardSeries = table.cols
+    .filter(c => c.startsWith("rew_"))
+    .map((c, i) => ({ name: c.slice(4), col: c, slot: i }));
+  chart(big, "Reward components (mean per tick, weighted)", rewardSeries);
+  chart(big, "Combat per episode (learner): combos, crits, jumps", [
+    { name: "max combo", col: "ep_maxcombo", slot: 0 },
+    { name: "crits", col: "ep_crits", slot: 1 },
+    { name: "jumps", col: "ep_jumps", slot: 2 },
+  ]);
+  chart(big, "Episode length + hits", [
+    { name: "ep_len (ticks)", col: "ep_len", slot: 0 },
+    { name: "hits (both sides)", col: "ep_hits", slot: 1 },
+  ]);
+
+  chart(small, "Entropy", [{ name: "entropy", col: "entropy", slot: 0 }], { h: 150 });
+  chart(small, "KL divergence", [{ name: "kl", col: "kl", slot: 0 }], { h: 150 });
+  chart(small, "Policy loss", [{ name: "pi_loss", col: "pi_loss", slot: 0 }], { h: 150 });
+  chart(small, "Value loss", [{ name: "v_loss", col: "v_loss", slot: 0 }], { h: 150 });
+  chart(small, "Clip fraction", [{ name: "clip_frac", col: "clip_frac", slot: 0 }], { h: 150 });
+  chart(small, "Max |logit| (drift canary)", [{ name: "max_logit", col: "max_logit", slot: 0 }], { h: 150 });
+  chart(small, "Steps per second", [{ name: "sps", col: "sps", slot: 0 }], { h: 150, compact: true });
+}
+
+async function refresh() {
+  if (!run) return;
+  try {
+    const res = await fetch(run + "/train_log.csv", { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    const t = parseCsv(await res.text());
+    if (t) {
+      table = t;
+      document.getElementById("runline").textContent =
+        "run “" + run + "” · " + t.rows.length + " updates logged";
+      document.getElementById("stamp").textContent =
+        "updated " + new Date().toLocaleTimeString();
+      document.querySelectorAll(".card").forEach(c => c.classList.remove("stale"));
+      render();
+    }
+  } catch (e) {
+    document.querySelectorAll(".card").forEach(c => c.classList.add("stale"));
+    document.getElementById("stamp").textContent = "fetch failed (" + e.message + ") — retrying";
+    if (firstLoad) document.getElementById("runline").textContent =
+      "cannot load " + run + "/train_log.csv — serve this file from runs/";
+  }
+  firstLoad = false;
+}
+
+async function listRuns() {
+  const sel = document.getElementById("runsel");
+  let names = [];
+  try {
+    const html = await (await fetch("./", { cache: "no-store" })).text();
+    names = [...html.matchAll(/href="([^"\/?]+)\/"/g)].map(m => decodeURIComponent(m[1]));
+  } catch (e) { }
+  if (!names.length && run) names = [run];
+  if (!run && names.length) run = names[0];
+  sel.replaceChildren();
+  for (const n of names) {
+    const o = document.createElement("option");
+    o.value = n;
+    o.textContent = n;
+    if (n === run) o.selected = true;
+    sel.appendChild(o);
+  }
+  sel.addEventListener("change", () => {
+    run = sel.value;
+    history.replaceState(null, "", "?run=" + encodeURIComponent(run));
+    table = null;
+    firstLoad = true;
+    refresh();
+  });
+}
+
+document.querySelectorAll(".filters button").forEach(b => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll(".filters button").forEach(x => x.setAttribute("aria-pressed", "false"));
+    b.setAttribute("aria-pressed", "true");
+    range = +b.dataset.range;
+    render();
+  });
+});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+addEventListener("resize", (() => { let t; return () => { clearTimeout(t); t = setTimeout(render, 150); }; })());
+
+listRuns().then(refresh);
+setInterval(refresh, 10000);
+</script>
+</body>
+</html>

@@ -1,0 +1,152 @@
+env = "mc1218"
+
+[run]
+name = "sword"
+
+seed = 1
+device = "auto"
+checkpoint_dir = "runs"
+total_updates = 100000000
+checkpoint_interval = 100
+workers = 28
+torch_threads = 16
+
+[env]
+num_envs = 24576
+
+[collect]
+cuda_graph = true
+overlap = true
+bf16 = true
+
+[components]
+obs = "standard"
+actions = "standard"
+reward = "combined"
+terminal = ["death", "tick_cap", "no_hit_timeout"]
+state_setter = "random"
+critic_obs = "standard_privileged"
+
+[reward]
+components = [
+    ["damage_dealt", 1.0],
+    ["damage_taken", -1.0],
+
+    ["win_loss", 20.0],
+    ["draw", -20.0],
+
+    ["approach", 0.05, "anneal"],
+    ["look_far", 0.05],
+
+    ["combo_exp", 1.0],
+
+    ["early_swing", -0.05],
+    ["missed_swing", -0.05],
+
+    ["cursor_pressure", 0.25],
+
+    ["jump", -0.05],
+    ["sneak", -0.05],
+
+    ["aim_jerk", -0.02],
+
+    ["fight_clock", -0.1],
+]
+
+shaping_schedule = [[0, 1.0], [2000, 0.0]]
+zero_sum = false
+
+[reward.fight_clock]
+window_ticks = 40
+
+[reward.cursor_pressure]
+max_dist = 4.5
+norm_deg = 15.0
+
+[reward.combo_exp]
+base = 2.0
+cap = 12.0
+min_damage = 0.6
+mirror = 0.25
+
+[reward.approach]
+exponent = 2.0
+ref_speed = 0.3
+
+[reward.early_swing]
+min_charge = 1.0
+
+[reward.look_far]
+far_min = 0.0
+far_gate = 0.001
+soft_deg = 10.0
+
+[terminal]
+tick_cap.ticks = 6000
+no_hit_timeout.ticks = 600
+
+[state_setter]
+margin = 2.0
+min_dist = 8.0
+max_dist = 12.0
+ping_quantiles = [[0.0, 10], [0.70, 40], [1.0, 100]]
+face_each_other = true
+yaw_jitter = 15.0
+
+[actions]
+yaw_buckets = [-45, -20, -10, -4, -1, 0, 1, 4, 10, 20, 45]
+pitch_buckets = [-20, -8, -3, -1, 0, 1, 3, 8, 20]
+allow_sneak = true
+
+[viewer]
+aim_smooth = 0.06
+
+[model]
+trunk = [256, 256]
+layernorm = true
+
+[ppo]
+horizon = 64
+gamma = 0.995
+lam = 0.95
+clip = 0.2
+lr = 1.5e-4
+lr_anneal = true
+entropy = 0.02
+entropy_schedule = [[0, 0.02], [8000, 0.01], [16000, 0.005]]
+vf_coef = 0.5
+grad_clip = 0.5
+epochs = 1
+minibatch = 262144
+norm_adv = true
+kl_stop = 0.03
+dual_clip = 3.0
+logit_l2 = 0.001
+v_clip = 0.0
+bf16 = true
+
+[selfplay]
+mirror_fraction = 0.5
+scripted_fraction_schedule = [[0, 0.15], [1500, 0.05]]
+pool_interval = 200
+pool_cap = 64
+max_active_opponents = 4
+resample_every = 8
+pfsp_p = 2.0
+pfsp_uniform = 0.15
+winrate_ema = 0.05
+opponent_deterministic = false
+
+[eval]
+interval = 200
+matches = 128
+pool_opponents = 3
+parallel = 64
+deterministic = true
+
+[elo]
+anchor = 1000
+
+[bot]
+max_turn = 40.0
+click_interval = 3

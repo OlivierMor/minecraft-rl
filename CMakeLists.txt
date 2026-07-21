@@ -1,0 +1,41 @@
+cmake_minimum_required(VERSION 3.18)
+project(mcpvprl CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
+option(MCRL_NATIVE "compile with -march=native" OFF)
+if(MCRL_NATIVE)
+    add_compile_options(-march=native)
+endif()
+
+find_package(CUDAToolkit QUIET)
+if(CUDAToolkit_FOUND AND NOT TARGET CUDA::nvToolsExt)
+    add_library(CUDA::nvToolsExt INTERFACE IMPORTED GLOBAL)
+endif()
+find_package(Torch REQUIRED)
+
+find_package(raylib CONFIG QUIET)
+if(NOT raylib_FOUND)
+    find_library(RAYLIB_LIBRARY raylib PATHS /opt/homebrew/lib /usr/local/lib)
+    find_path(RAYLIB_INCLUDE raylib.h PATHS /opt/homebrew/include /usr/local/include)
+endif()
+if(raylib_FOUND OR (RAYLIB_LIBRARY AND RAYLIB_INCLUDE))
+    set(MCRL_HAVE_RAYLIB TRUE)
+else()
+    set(MCRL_HAVE_RAYLIB FALSE)
+    message(WARNING "raylib not found - building without the play/watch viewers "
+                    "(brew install raylib / apt install libraylib-dev)")
+endif()
+
+add_subdirectory(sim)
+add_subdirectory(rl)
+if(MCRL_HAVE_RAYLIB)
+    add_subdirectory(viewer)
+endif()
+add_subdirectory(apps)

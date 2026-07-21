@@ -1,0 +1,13 @@
+foreach(tool train export_policy)
+    add_executable(${tool} ${tool}.cpp)
+    target_compile_options(${tool} PRIVATE ${RL_FLAGS})
+    target_link_libraries(${tool} PRIVATE rlcore)
+endforeach()
+
+if(MCRL_HAVE_RAYLIB)
+    foreach(tool play watch)
+        add_executable(${tool} ${tool}.cpp)
+        target_compile_options(${tool} PRIVATE ${RL_FLAGS})
+        target_link_libraries(${tool} PRIVATE rlcore mcviewer)
+    endforeach()
+endif()
