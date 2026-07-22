@@ -1,8 +1,11 @@
 # minecraft-rl
 
-A reinforcement learning framework for Minecraft-style combat, built for
+An extremely fast reinforcement learning framework for Minecraft-style combat, built for
 research. Today it does 1.9+ sword duels; the architecture is designed
 to grow into other Minecraft-like tasks.
+
+Trains at ~3.4 million minecraft ticks per second (~50 real world hours per second)
+on an RTX 5080 with a ryzen 9 9950x
 
 It consists of a headless C++ reimplementation of the relevant combat
 physics (written from scratch — it contains no Minecraft code or assets), a
@@ -10,9 +13,7 @@ PPO self-play trainer built on LibTorch, and viewers to inspect what the
 policies learn.
 
 Everything in the training loop is C++: there is no Python in the hot path,
-and no game client involved anywhere. The simulator reproduces 1.9+ style
-movement, attack-cooldown, knockback, sprint-reset and hit-detection rules
-closely enough that the learned behavior is meaningful, at billions of steps per hour on one machine.
+and no game client involved anywhere.
 
 > **Scope:** this is a simulator-only research project. It ships nothing
 > that connects to or controls the actual game, and it must not be used to
