@@ -12,8 +12,7 @@ policies learn.
 Everything in the training loop is C++: there is no Python in the hot path,
 and no game client involved anywhere. The simulator reproduces 1.9+ style
 movement, attack-cooldown, knockback, sprint-reset and hit-detection rules
-closely enough that the learned behavior is meaningful, at hundreds of
-millions of steps per hour on one machine.
+closely enough that the learned behavior is meaningful, at billions of steps per hour on one machine.
 
 > **Scope:** this is a simulator-only research project. It ships nothing
 > that connects to or controls the actual game, and it must not be used to
