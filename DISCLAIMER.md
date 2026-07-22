@@ -13,8 +13,8 @@ used here only to describe what the software interoperates with
 
 This repository contains **no source code, no assets, no textures, no sounds,
 and no other copyrighted material from Minecraft**. The simulator in `sim/`
-is an original, independently written implementation of publicly observable
-game mechanics (movement, combat timing, knockback), authored from scratch in
+is an original, independently written implementation of game mechanics 
+(movement, combat timing, knockback), authored from scratch in
 C++. Game *mechanics and rules* are not protected expression; no Minecraft
 program code has been copied into this project. This project does not
 distribute the game, does not modify the game's files, and does not bypass
