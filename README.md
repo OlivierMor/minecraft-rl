@@ -5,7 +5,7 @@ research. Today it does 1.9+ sword duels; the architecture is designed
 to grow into other Minecraft-like tasks.
 
 Trains at ~3.4 million minecraft ticks per second (~50 real world hours per second)
-on an RTX 5080 with a ryzen 9 9950x
+on an RTX 5080 with a ryzen 9 9950x on the given sword.toml config file.
 
 It consists of a headless C++ reimplementation of the relevant combat
 physics (written from scratch — it contains no Minecraft code or assets), a
